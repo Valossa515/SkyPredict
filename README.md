@@ -110,7 +110,7 @@ Retorna métricas de performance do modelo de machine learning.
 
 📤 **Exemplo de Requisição:**
 ```bash
-curl "http://localhost:5000/analise"
+curl "http://localhost:5000/analise?lat=-23.5505&lon=-46.6333&"
 ```
 
 ### 5️⃣ Exportação de Dados

@@ -35,14 +35,19 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
+### 📥 Instalação do MongoDB
+Siga as instruções para a instalação em https://www.mongodb.com/pt-br/docs/manual/installation/
+
 ### 🔑 Configuração das Chaves de API
 Crie um arquivo `.env` na raiz do projeto e adicione suas credenciais:
 ```ini
 METEOSTAT_API_KEY=suachave_meteostat
 METEOSTAT_API_HOST=suahost_meteostat
 AEROAPI_KEY=suachave_aeroapi
+MONGO_URI=api_mongodb
+MONGOD_DATASET=base_de_dados
+MONGO_COLLECTION=coleção
 ```
-
 ---
 
 ## 🛠️ Endpoints da API
@@ -144,6 +149,7 @@ http://localhost:5000
 - **Prophet** (Modelagem preditiva)
 - **Meteostat API** (Dados meteorológicos)
 - **AeroAPI** (Informações de aeroportos e rotas)
+- **MongoDb e MongoDb Compass** (Banco de dados e seu gerenciador)
 
 ---
 

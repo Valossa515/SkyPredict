@@ -73,7 +73,8 @@ def sugerir_rota():
             "sugestao": sugestao
         }
         
-        collection.insert_one(sugestao_rota)
+        result = collection.insert_one(sugestao_rota)
+        sugestao_rota["_id"] = str(result.inserted_id)
         
         return jsonify(sugestao_rota)
         

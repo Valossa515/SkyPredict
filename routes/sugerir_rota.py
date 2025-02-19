@@ -4,6 +4,19 @@ from services.meteostat_service import carregar_dados
 from services.model_service import treinar_modelo, prever_variavel
 import pandas as pd
 from datetime import datetime
+from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+MONGO_URI = os.getenv('MONGO_URI')
+MONGO_DB = os.getenv('MONGOD_DATASET')
+MONGO_COLLECTION = os.getenv('MONGO_COLLECTION')
+
+client = MongoClient(MONGO_URI)
+db = client[MONGO_DB]
+collection = db[MONGO_COLLECTION]
 
 sugerir_rota_bp = Blueprint('sugerir_rota', __name__)
 
@@ -50,7 +63,7 @@ def sugerir_rota():
             sugestao = "Rota segura. Risco meteorológico baixo."
 
         # Retornar resposta
-        return jsonify({
+        sugestao_rota = {
             "origem": origem_id,
             "destino": destino_id,
             "data": data_futura,
@@ -58,7 +71,11 @@ def sugerir_rota():
             "risco_destino": "Alto" if risco_destino == 1 else "Baixo",
             "rotas": rotas,
             "sugestao": sugestao
-        })
-
+        }
+        
+        collection.insert_one(sugestao_rota)
+        
+        return jsonify(sugestao_rota)
+        
     except Exception as e:
         return jsonify({"erro": str(e)}), 500

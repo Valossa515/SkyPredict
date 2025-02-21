@@ -108,6 +108,14 @@ Gera gráficos de previsão climática e os retorna como imagem PNG.
 ```bash
 curl "http://localhost:5000/graficos?lat=-23.5505&lon=-46.6333&data=2024-10-15" -o grafico.png
 ```
+**Endpoint:** `GET /analise/graficos`
+Gera gráficos de uma determinada analise
+
+📤 **Exemplo de Requisição:**
+
+```bash
+curl "http://localhost:5000/analise/graficos?lat=-23.5505&lon=-46.6333" -o grafico.png
+```
 
 ### 4️⃣ Análise do Modelo
 **Endpoint:** `GET /analise`  

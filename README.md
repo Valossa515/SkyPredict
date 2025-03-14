@@ -8,6 +8,7 @@ Ela utiliza:
 - 🔹 **AeroAPI** para informações sobre aeroportos e rotas de voo.
 - 🔹 **Machine Learning** com RandomForest para previsão de risco climático.
 - 🔹 **Flask** para estruturação dos endpoints.
+- 🔹 **Docker** para criar uma imagem/container
 
 ---
 
@@ -37,6 +38,14 @@ pip install -r requirements.txt
 
 ### 📥 Instalação do MongoDB
 Siga as instruções para a instalação em https://www.mongodb.com/pt-br/docs/manual/installation/
+
+### 🛠️ Configurando o docker
+Rode o comando abaixo para criar um container docker:
+- ```bash
+    docker-compose up -d
+  ```
+- Caso precise alterar alguma propriedade é necessario ajustar os arquivos **dockercompose.yml** e **Dockerfile**
+
 
 ### 🔑 Configuração das Chaves de API
 Crie um arquivo `.env` na raiz do projeto e adicione suas credenciais:

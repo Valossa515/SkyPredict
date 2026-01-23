@@ -18,8 +18,11 @@ def previsao():
     try:
         datetime.strptime(data_futura, '%Y-%m-%d')
         df = carregar_dados(lat, lon)
-        model = treinar_modelo(df)
-        previsoes = {coluna: prever_variavel(df, coluna, data_futura) for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']}
+        model = treinar_modelo(df, lat, lon)
+        previsoes = {
+            coluna: prever_variavel(df, coluna, data_futura, lat, lon)
+            for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+        }
         dados_futuros = pd.DataFrame(previsoes, index=[0])
         previsao_risco = model.predict(dados_futuros)[0]
 

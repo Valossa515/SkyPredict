@@ -146,6 +146,34 @@ curl "http://localhost:5000/exportar_excel?lat=-23.5505&lon=-46.6333" -o dados.x
 
 ---
 
+## 🧠 Cache de Modelos (RandomForest + Prophet)
+A API mantém um cache em memória por par de coordenadas `(lat, lon)` para reaproveitar:
+- O **RandomForestClassifier** usado na previsão de risco.
+- Os **modelos Prophet** por variável (`tavg`, `tmin`, `tmax`, `prcp`, `wspd`, `pres`).
+
+### ✅ Validade e invalidação automática
+O cache é invalidado automaticamente após **24 horas** (padrão).  
+Você pode ajustar esse tempo com a variável de ambiente:
+```ini
+MODEL_CACHE_TTL_HOURS=24
+```
+
+### ♻️ Como limpar/invalidar manualmente
+Há duas formas simples de limpar o cache:
+1. **Reiniciar a aplicação** (limpa todo o cache em memória).
+2. **Limpeza programática** (em um script ou console Python):
+```python
+from services.model_service import clear_model_cache
+
+# Limpa tudo
+clear_model_cache()
+
+# Limpa apenas um par (lat, lon)
+clear_model_cache(lat=-23.5505, lon=-46.6333)
+```
+
+---
+
 ## 🚀 Como Rodar a API
 ### 🔥 Modo de Desenvolvimento
 1️⃣ Execute o seguinte comando:

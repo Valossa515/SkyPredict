@@ -13,19 +13,19 @@ def gerar_sugestao_rota(origem_id, destino_id, data_futura):
     lat_destino, lon_destino = obter_coordenadas_aeroporto(destino_id)
 
     df_origem = carregar_dados(lat_origem, lon_origem)
-    model_origem = treinar_modelo(df_origem)
+    model_origem = treinar_modelo(df_origem, lat_origem, lon_origem)
 
     previsoes_origem = {
-        coluna: prever_variavel(df_origem, coluna, data_futura)
+        coluna: prever_variavel(df_origem, coluna, data_futura, lat_origem, lon_origem)
         for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
     }
     risco_origem = model_origem.predict(pd.DataFrame(previsoes_origem, index=[0]))[0]
 
     df_destino = carregar_dados(lat_destino, lon_destino)
-    model_destino = treinar_modelo(df_destino)
+    model_destino = treinar_modelo(df_destino, lat_destino, lon_destino)
 
     previsoes_destino = {
-        coluna: prever_variavel(df_destino, coluna, data_futura)
+        coluna: prever_variavel(df_destino, coluna, data_futura, lat_destino, lon_destino)
         for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
     }
     risco_destino = model_destino.predict(pd.DataFrame(previsoes_destino, index=[0]))[0]

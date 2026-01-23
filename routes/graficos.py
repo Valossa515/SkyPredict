@@ -22,7 +22,10 @@ def graficos():
         datetime.strptime(data_futura, '%Y-%m-%d')
         df = carregar_dados(lat, lon)
 
-        previsoes = {coluna: prever_variavel(df, coluna, data_futura) for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']}
+        previsoes = {
+            coluna: prever_variavel(df, coluna, data_futura, lat, lon)
+            for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+        }
 
         fig, axes = plt.subplots(3, 2, figsize=(15, 10)) 
         axes = axes.flatten()

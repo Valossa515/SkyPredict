@@ -1,11 +1,7 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify
 import folium
-from io import BytesIO
-from folium.plugins import AntPath
-import requests
-from config import AERO_API_URL, AEROAPI_HEADERS
-import math
-import json
+from services.aeroapi_service import obter_coordenadas_aeroporto
+from services.rota_service import gerar_sugestao_rota
 
 mapa_bp = Blueprint('mapa', __name__)
 
@@ -19,13 +15,7 @@ def mostrar_mapa_sugerido_animado_html():
         return jsonify({"erro": "Os parâmetros 'origem_id', 'destino_id' e 'data' são obrigatórios."}), 400
 
     try:
-        # Chamar o endpoint /sugerir_rota internamente
-        sugestao_url = f"http://localhost:5000/sugerir_rota?origem_id={origem_id}&destino_id={destino_id}&data={data_futura}"
-        response = requests.get(sugestao_url)
-        sugestao_data = response.json()
-
-        if response.status_code != 200:
-            return jsonify({"erro": "Erro ao obter sugestão de rota."}), 500
+        sugestao_data = gerar_sugestao_rota(origem_id, destino_id, data_futura)
 
         # Extrair as coordenadas da sugestão de rota
         origem = sugestao_data['origem']
@@ -99,11 +89,3 @@ def mostrar_mapa_sugerido_animado_html():
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
-
-def obter_coordenadas_aeroporto(aeroporto_id):
-    url = f"{AERO_API_URL}/airports/{aeroporto_id}"
-    response = requests.get(url, headers=AEROAPI_HEADERS)
-    if response.status_code == 200:
-        data = response.json()
-        return data['latitude'], data['longitude']
-    raise ValueError(f"Erro ao obter coordenadas do aeroporto {aeroporto_id}: {response.status_code}")

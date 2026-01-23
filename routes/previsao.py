@@ -12,7 +12,7 @@ def previsao():
     lon = request.args.get('lon', type=float)
     data_futura = request.args.get('data')
 
-    if not lat or not lon or not data_futura:
+    if lat is None or lon is None or not data_futura:
         return jsonify({"erro": "Os parâmetros 'lat', 'lon' e 'data' são obrigatórios."}), 400
 
     try:

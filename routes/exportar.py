@@ -10,7 +10,7 @@ def exportar_excel():
     lat = request.args.get('lat', type=float)
     lon = request.args.get('lon', type=float)
 
-    if not lat or not lon:
+    if lat is None or lon is None:
         return jsonify({"erro": "Os parâmetros 'lat' e 'lon' são obrigatórios."}), 400
 
     try:

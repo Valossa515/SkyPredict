@@ -15,7 +15,7 @@ def graficos():
     lat = request.args.get('lat', type=float)
     lon = request.args.get('lon', type=float)
 
-    if not lat or not lon or not data_futura:
+    if lat is None or lon is None or not data_futura:
         return jsonify({"erro": "Os parâmetros 'lat', 'lon' e 'data' são obrigatórios."}), 400
 
     try:

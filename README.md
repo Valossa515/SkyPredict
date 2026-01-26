@@ -187,6 +187,33 @@ http://localhost:5000
 
 ---
 
+## ☕ Serviço Java (Spring Boot 4 + Gradle)
+Este repositório também inclui um projeto Java que atua como API principal e delega as previsões e o risco meteorológico para o microserviço Python existente.  
+O serviço Java usa o **RestClient** do Spring como substituto moderno ao OpenFeign.
+
+### ✅ Pré-requisitos
+- Java 21+
+- Gradle
+
+### ▶️ Como rodar o serviço Java
+```bash
+cd spring-service
+./gradlew bootRun
+```
+
+### 🔌 Configuração do microserviço Python
+Defina a URL do serviço Python com a variável de ambiente abaixo:
+```bash
+export PYTHON_SERVICE_BASE_URL=http://localhost:5000
+```
+
+### 🧩 Endpoints proxy
+Atualmente, o serviço Java expõe e encaminha:
+- `GET /previsao` → `/previsao` (Python)
+- `GET /sugerir_rota` → `/sugerir_rota` (Python)
+
+---
+
 ## 🛠 Tecnologias Utilizadas
 - **Python 3.8+**
 - **Flask** (Framework para API)

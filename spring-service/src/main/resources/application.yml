@@ -1,0 +1,11 @@
+server:
+  port: 8080
+
+python:
+  service:
+    base-url: ${PYTHON_SERVICE_BASE_URL:http://localhost:5000}
+
+spring:
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/skypredict}

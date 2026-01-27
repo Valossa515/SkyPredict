@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mongo:
     image: mongo:latest
@@ -10,13 +8,17 @@ services:
       - mongo-data:/data/db
 
   app:
-    image: skypredict-api
     build: .
     container_name: skypredict
     ports:
       - "5000:5000"
     environment:
-      - MONGO_URI${MONGO_URI}${MONGOD_DATASET}
+      - METEOSTAT_API_KEY=${METEOSTAT_API_KEY}
+      - METEOSTAT_API_HOST=${METEOSTAT_API_HOST}
+      - AEROAPI_KEY=${AEROAPI_KEY}
+      - MONGO_URI=${MONGO_URI}
+      - MONGOD_DB=${MONGOD_DB}
+      - MONGO_COLLECTION=${MONGO_COLLECTION}
     depends_on:
       - mongo
 

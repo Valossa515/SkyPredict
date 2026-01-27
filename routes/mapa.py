@@ -1,9 +1,47 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 import folium
 from services.aeroapi_service import obter_coordenadas_aeroporto
 from services.rota_service import gerar_sugestao_rota
 
 mapa_bp = Blueprint('mapa', __name__)
+
+def _extract_lat_lon(aeroapi_result):
+    """
+    Aceita:
+      - (lat, lon) / [lat, lon]
+      - dict JSON da AeroAPI
+    Retorna: (lat, lon) como float
+    """
+    # Caso 1: já veio como tupla/lista
+    if isinstance(aeroapi_result, (tuple, list)) and len(aeroapi_result) >= 2:
+        return float(aeroapi_result[0]), float(aeroapi_result[1])
+
+    # Caso 2: veio como dict JSON
+    if isinstance(aeroapi_result, dict):
+        # tenta vários padrões comuns
+        for lat_key, lon_key in [
+            ("latitude", "longitude"),
+            ("lat", "lon"),
+            ("lat", "lng"),
+            ("Latitude", "Longitude"),
+        ]:
+            if lat_key in aeroapi_result and lon_key in aeroapi_result:
+                return float(aeroapi_result[lat_key]), float(aeroapi_result[lon_key])
+
+        # alguns providers colocam dentro de "location"
+        loc = aeroapi_result.get("location") if "location" in aeroapi_result else None
+        if isinstance(loc, dict):
+            for lat_key, lon_key in [
+                ("latitude", "longitude"),
+                ("lat", "lon"),
+                ("lat", "lng"),
+            ]:
+                if lat_key in loc and lon_key in loc:
+                    return float(loc[lat_key]), float(loc[lon_key])
+
+    raise ValueError(
+        f"Não foi possível extrair latitude/longitude do retorno da AeroAPI. Tipo={type(aeroapi_result)}"
+    )
 
 @mapa_bp.route('/mapa_sugerido', methods=['GET'])
 def mostrar_mapa_sugerido_animado_html():
@@ -17,7 +55,6 @@ def mostrar_mapa_sugerido_animado_html():
     try:
         sugestao_data = gerar_sugestao_rota(origem_id, destino_id, data_futura)
 
-        # Extrair as coordenadas da sugestão de rota
         origem = sugestao_data['origem']
         destino = sugestao_data['destino']
         rotas = sugestao_data['rotas']
@@ -25,14 +62,16 @@ def mostrar_mapa_sugerido_animado_html():
         risco_destino = sugestao_data['risco_destino']
         sugestao = sugestao_data['sugestao']
 
-        # Obter coordenadas dos aeroportos
-        lat_origem, lon_origem = obter_coordenadas_aeroporto(origem)
-        lat_destino, lon_destino = obter_coordenadas_aeroporto(destino)
+        # Obter coordenadas dos aeroportos (corrigido)
+        origem_info = obter_coordenadas_aeroporto(origem)
+        destino_info = obter_coordenadas_aeroporto(destino)
+        lat_origem, lon_origem = _extract_lat_lon(origem_info)
+        lat_destino, lon_destino = _extract_lat_lon(destino_info)
 
         # Criar o mapa
         mapa = folium.Map(location=[lat_origem, lon_origem], zoom_start=5)
 
-        # Adicionar marcadores para origem e destino com informações de risco
+        # Marcadores origem/destino
         folium.Marker(
             [lat_origem, lon_origem],
             popup=f"Origem: {origem}<br>Risco: {risco_origem}<br>Sugestão: {sugestao}",
@@ -45,22 +84,19 @@ def mostrar_mapa_sugerido_animado_html():
             icon=folium.Icon(color='red' if risco_destino == "Alto" else 'green')
         ).add_to(mapa)
 
-        # Criar um GeoJSON com a linha
+        # Linha GeoJSON
         geojson_data = {
             "type": "Feature",
             "geometry": {
                 "type": "LineString",
                 "coordinates": [
-                    [lon_origem, lat_origem],  # GeoJSON usa [longitude, latitude]
+                    [lon_origem, lat_origem],
                     [lon_destino, lat_destino]
                 ]
             },
-            "properties": {
-                "tooltip": f"Origem: {origem} ➡️ Destino: {destino}"
-            }
-        } 
+            "properties": {"tooltip": f"Origem: {origem} ➡️ Destino: {destino}"}
+        }
 
-        # Adicionar a linha ao mapa usando GeoJson
         folium.GeoJson(
             geojson_data,
             style_function=lambda x: {"color": "blue", "weight": 5, "dashArray": "5, 10"},
@@ -68,24 +104,25 @@ def mostrar_mapa_sugerido_animado_html():
             popup=folium.Popup(f"Rota de {origem} para {destino}")
         ).add_to(mapa)
 
-        # Adicionar informações sobre as rotas
-        for rota in rotas['routes']:
-            # Criar um popup com detalhes da rota
+        # Rotas (marcador na origem só pra exibir detalhes)
+        routes_list = rotas.get("routes", []) if isinstance(rotas, dict) else []
+        for rota in routes_list:
             popup_content = f"""
-                <b>Tipo de Aeronave:</b> {', '.join(rota['aircraft_types'])}<br>
-                <b>Altitude:</b> {rota['filed_altitude_min']} - {rota['filed_altitude_max']} ft<br>
-                <b>Distância:</b> {rota['route_distance']}<br>
-                <b>Última Partida:</b> {rota['last_departure_time']}<br>
-                <b>Rota:</b> {rota['route']}
+                <b>Tipo de Aeronave:</b> {', '.join(rota.get('aircraft_types', []))}<br>
+                <b>Altitude:</b> {rota.get('filed_altitude_min', '-') } - {rota.get('filed_altitude_max', '-') } ft<br>
+                <b>Distância:</b> {rota.get('route_distance', '-') }<br>
+                <b>Última Partida:</b> {rota.get('last_departure_time', '-') }<br>
+                <b>Rota:</b> {rota.get('route', '-') }
             """
             folium.Marker(
-                [lat_origem, lon_origem],  # Pode ajustar para waypoints se disponíveis
+                [lat_origem, lon_origem],
                 popup=folium.Popup(popup_content, max_width=300),
                 icon=folium.Icon(color='orange', icon='plane', prefix='fa')
             ).add_to(mapa)
 
-        # Retornar o mapa como uma página HTML
-        return mapa._repr_html_()
+        # ✅ Retorna HTML de verdade com content-type correto (recomendação)
+        html = mapa.get_root().render()
+        return Response(html, mimetype="text/html")
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500

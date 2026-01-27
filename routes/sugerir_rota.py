@@ -14,14 +14,14 @@ sugerir_rota_bp = Blueprint('sugerir_rota', __name__)
 
 def _get_mongo_collection():
     mongo_uri = os.getenv('MONGO_URI')
-    mongo_db = os.getenv('MONGOD_DATASET')
+    mongo_db = os.getenv('MONGOD_DB')
     mongo_collection = os.getenv('MONGO_COLLECTION')
 
     missing_vars = [
         name
         for name, value in (
             ("MONGO_URI", mongo_uri),
-            ("MONGOD_DATASET", mongo_db),
+            ("MONGOD_DB", mongo_db),
             ("MONGO_COLLECTION", mongo_collection),
         )
         if not value

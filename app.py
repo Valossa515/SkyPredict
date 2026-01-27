@@ -6,6 +6,12 @@ from routes.analise import analise_bp
 from routes.exportar import exportar_bp
 from routes.mapa import mapa_bp
 
+import os
+import certifi
+
+os.environ["SSL_CERT_FILE"] = certifi.where()
+os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+
 app = Flask(__name__)
 
 # Registrar os Blueprints das rotas
@@ -17,4 +23,4 @@ app.register_blueprint(exportar_bp)
 app.register_blueprint(mapa_bp)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port = 5000, debug=True)

@@ -1,10 +1,22 @@
 from flask import Blueprint, request, jsonify
 from services.meteostat_service import carregar_dados
-from services.model_service import treinar_modelo, prever_variavel
-import pandas as pd
+from services.model_service import treinar_modelo, prever_variavel, prever_com_modelo, BASE_FEATURES
 from datetime import datetime
+import numpy as np
 
 previsao_bp = Blueprint('previsao', __name__)
+
+
+def _to_python_type(val):
+    """Converte valores numpy para tipos Python nativos."""
+    if isinstance(val, (np.integer, np.int64, np.int32)):
+        return int(val)
+    elif isinstance(val, (np.floating, np.float64, np.float32)):
+        return float(val)
+    elif isinstance(val, np.bool_):
+        return bool(val)
+    return val
+
 
 @previsao_bp.route('/previsao', methods=['GET'])
 def previsao():
@@ -20,11 +32,12 @@ def previsao():
         df = carregar_dados(lat, lon)
         model = treinar_modelo(df, lat, lon)
         previsoes = {
-            coluna: prever_variavel(df, coluna, data_futura, lat, lon)
-            for coluna in ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+            coluna: _to_python_type(prever_variavel(df, coluna, data_futura, lat, lon))
+            for coluna in BASE_FEATURES
         }
-        dados_futuros = pd.DataFrame(previsoes, index=[0])
-        previsao_risco = model.predict(dados_futuros)[0]
+
+        # Usar a função prever_com_modelo que aplica as transformações corretas
+        previsao_risco = prever_com_modelo(previsoes, model, lat, lon, data_futura)[0]
 
         return jsonify({
             "localizacao": {"latitude": lat, "longitude": lon},

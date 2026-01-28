@@ -3,9 +3,9 @@ import pandas as pd
 
 from services.aeroapi_service import obter_coordenadas_aeroporto, obter_rotas_aeroporto
 from services.meteostat_service import carregar_dados
-from services.model_service import treinar_modelo, prever_variavel
+from services.model_service import treinar_modelo, prever_variavel, prever_com_modelo, BASE_FEATURES
 
-FEATURES = ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+FEATURES = BASE_FEATURES
 
 def _avaliar_risco_do_df(df: pd.DataFrame, data_futura: str):
     dia = pd.to_datetime(data_futura)
@@ -13,7 +13,9 @@ def _avaliar_risco_do_df(df: pd.DataFrame, data_futura: str):
     if not isinstance(df.index, pd.DatetimeIndex):
         return None, None
 
-    mask = df.index.normalize() == dia.normalize()
+    # Cast explícito para DatetimeIndex para type checker
+    idx: pd.DatetimeIndex = df.index  # type: ignore[assignment]
+    mask = idx.normalize() == dia.normalize()
     if not mask.any():
         return None, None
 
@@ -25,7 +27,8 @@ def _avaliar_risco_do_df(df: pd.DataFrame, data_futura: str):
 def _avaliar_risco_por_modelo(df: pd.DataFrame, data_futura: str, lat: float, lon: float):
     model = treinar_modelo(df, lat, lon)
     previsoes = {col: prever_variavel(df, col, data_futura, lat, lon) for col in FEATURES}
-    risk = int(model.predict(pd.DataFrame(previsoes, index=[0]))[0])
+    # Usar a função prever_com_modelo que aplica as transformações corretas
+    risk = int(prever_com_modelo(previsoes, model, lat, lon, data_futura)[0])
     return risk, None
 
 def gerar_sugestao_rota(origem_id, destino_id, data_futura):

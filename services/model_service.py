@@ -1,12 +1,16 @@
 from datetime import datetime, timedelta, timezone
 import os
+import logging
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.dummy import DummyClassifier
 from prophet import Prophet
+
+logger = logging.getLogger(__name__)
 
 CACHE_TTL_HOURS = int(os.getenv("MODEL_CACHE_TTL_HOURS", "24"))
 CACHE_TTL = timedelta(hours=CACHE_TTL_HOURS)
@@ -134,6 +138,7 @@ def treinar_modelo(df, lat, lon, use_enhanced_features: bool = True):
     - Tratamento de desbalanceamento de classes
     - Normalização de dados
     - Otimização de hiperparâmetros (opcional via env var)
+    - Tratamento de classe única (DummyClassifier)
     """
     entry = _get_cache_entry(lat, lon)
     if _is_cache_valid(entry) and entry["rf_model"] is not None:
@@ -151,15 +156,30 @@ def treinar_modelo(df, lat, lon, use_enhanced_features: bool = True):
     X = frame[feature_cols]
     y = frame["risk"].astype(int)
 
-    # Verificar desbalanceamento de classes
+    # Verificar número de classes
     class_counts = y.value_counts()
-    is_imbalanced = len(class_counts) > 1 and (class_counts.min() / class_counts.max()) < 0.3
+    n_classes = len(class_counts)
 
     # Normalização dos dados
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     entry["scaler"] = scaler
     entry["feature_cols"] = feature_cols
+
+    # Se há apenas uma classe, usar DummyClassifier
+    if n_classes < 2:
+        logger.warning(
+            f"Dados para lat={lat}, lon={lon} contêm apenas a classe {class_counts.index[0]}. "
+            "Usando DummyClassifier para previsões."
+        )
+        model = DummyClassifier(strategy='constant', constant=int(class_counts.index[0]))
+        model.fit(X_scaled, y)
+        entry["rf_model"] = model
+        entry["single_class"] = True
+        return model
+
+    entry["single_class"] = False
+    is_imbalanced = (class_counts.min() / class_counts.max()) < 0.3
 
     if ENABLE_HYPERPARAMETER_TUNING and len(y) >= 50:
         # Otimização de hiperparâmetros com GridSearchCV

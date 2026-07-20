@@ -1,20 +1,23 @@
+from datetime import date
+
 from services.http_client import session
 import pandas as pd
-from config import API_URL, HEADERS
+from config import API_URL, HEADERS, BASE_FEATURES, HISTORICAL_START_DATE
 from requests import HTTPError
 
-FEATURES = ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+FEATURES = BASE_FEATURES
 
 def carregar_dados(lat, lon):
     params = {
         "lat": lat,
         "lon": lon,
-        "start": "2018-01-01",
-        "end": "2025-12-31",
+        "start": HISTORICAL_START_DATE,
+        # Data final dinâmica: hoje (dados históricos disponíveis até o presente).
+        "end": date.today().isoformat(),
         "units": "metric",
     }
 
-    response = session.get(API_URL, headers=HEADERS, params=params, timeout=15, verify=False)
+    response = session.get(API_URL, headers=HEADERS, params=params, timeout=15)
     try:
         response.raise_for_status()
     except HTTPError as exc:

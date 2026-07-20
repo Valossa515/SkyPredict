@@ -18,6 +18,12 @@ AEROAPI_HEADERS = {
     "x-apikey": os.getenv("AEROAPI_KEY"),
 }
 
+# Features meteorológicas base (fonte única de verdade).
+BASE_FEATURES = ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
+
+# Janela de dados históricos consultada na Meteostat.
+HISTORICAL_START_DATE = os.getenv("HISTORICAL_START_DATE", "2018-01-01")
+
 # Mensagens e constantes
 HISTORICAL_LABEL = 'Dados Históricos'
 FUTURE_DATE_LABEL = 'Data Futura'

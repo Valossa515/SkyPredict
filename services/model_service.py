@@ -6,18 +6,18 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.dummy import DummyClassifier
 from prophet import Prophet
+
+from config import BASE_FEATURES
 
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_HOURS = int(os.getenv("MODEL_CACHE_TTL_HOURS", "24"))
 CACHE_TTL = timedelta(hours=CACHE_TTL_HOURS)
 _MODEL_CACHE = {}
-
-# Features originais
-BASE_FEATURES = ['tavg', 'tmin', 'tmax', 'prcp', 'wspd', 'pres']
 # Features derivadas para engenharia de features
 DERIVED_FEATURES = ['temp_amplitude', 'temp_ratio', 'heat_index', 'wind_chill',
                     'month', 'season', 'prcp_wspd_interaction', 'extreme_temp_flag']
@@ -192,14 +192,14 @@ def treinar_modelo(df, lat, lon, use_enhanced_features: bool = True):
     return model
 
 
-def _train_default_model(X, y, is_imbalanced: bool):
+def build_ensemble(is_imbalanced: bool) -> VotingClassifier:
+    """Cria o ensemble (Random Forest + Gradient Boosting) com soft voting.
+
+    Fonte única de verdade da arquitetura do modelo, reutilizada tanto no
+    treino em produção quanto na rota de análise/métricas.
     """
-    Treina um modelo padrão otimizado usando Voting Classifier (ensemble).
-    """
-    # Configuração de class_weight para dados desbalanceados
     class_weight = 'balanced' if is_imbalanced else None
 
-    # Random Forest otimizado
     rf = RandomForestClassifier(
         n_estimators=300,
         max_depth=15,
@@ -211,7 +211,6 @@ def _train_default_model(X, y, is_imbalanced: bool):
         n_jobs=-1,
     )
 
-    # Gradient Boosting para complementar
     gb = GradientBoostingClassifier(
         n_estimators=150,
         max_depth=5,
@@ -221,13 +220,30 @@ def _train_default_model(X, y, is_imbalanced: bool):
         random_state=42,
     )
 
-    # Ensemble com Voting Classifier (soft voting para probabilidades)
-    ensemble = VotingClassifier(
+    return VotingClassifier(
         estimators=[('rf', rf), ('gb', gb)],
         voting='soft',
-        n_jobs=-1
+        n_jobs=-1,
     )
 
+
+def build_ensemble_pipeline(is_imbalanced: bool) -> Pipeline:
+    """Pipeline (StandardScaler -> ensemble).
+
+    Usar o pipeline em validação cruzada garante que a normalização seja
+    ajustada apenas no fold de treino, evitando data leakage nas métricas.
+    """
+    return Pipeline([
+        ('scaler', StandardScaler()),
+        ('ensemble', build_ensemble(is_imbalanced)),
+    ])
+
+
+def _train_default_model(X, y, is_imbalanced: bool):
+    """
+    Treina um modelo padrão otimizado usando Voting Classifier (ensemble).
+    """
+    ensemble = build_ensemble(is_imbalanced)
     ensemble.fit(X, y)
     return ensemble
 

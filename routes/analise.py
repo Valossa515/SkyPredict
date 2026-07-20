@@ -4,15 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import (accuracy_score, classification_report, confusion_matrix,
                             f1_score, precision_score, recall_score, roc_auc_score)
 from services.meteostat_service import carregar_dados
-from services.model_service import BASE_FEATURES, ENHANCED_FEATURES, _prepare_training_frame
+from services.model_service import (BASE_FEATURES, ENHANCED_FEATURES, _prepare_training_frame,
+                                    build_ensemble_pipeline)
+from services.validators import validar_coordenadas
 
 analise_bp = Blueprint('analise', __name__)
+
+# Coordenadas default (São Paulo) usadas quando não informadas.
+_DEFAULT_LAT = -23.5505
+_DEFAULT_LON = -46.6333
 
 
 def _convert_numpy_types(obj):
@@ -34,184 +38,132 @@ def _convert_numpy_types(obj):
         return obj.tolist()
     return obj
 
+
+def _preparar_dataset(lat, lon, use_enhanced):
+    """Carrega dados, prepara o frame e devolve (X, y, feature_cols, is_imbalanced)."""
+    df = carregar_dados(lat, lon)
+    frame = _prepare_training_frame(df, use_enhanced_features=use_enhanced)
+
+    feature_cols = ENHANCED_FEATURES if use_enhanced else BASE_FEATURES
+    feature_cols = [f for f in feature_cols if f in frame.columns]
+
+    X = frame[feature_cols]
+    y = frame['risk']
+
+    class_counts = y.value_counts()
+    is_imbalanced = len(class_counts) > 1 and (class_counts.min() / class_counts.max()) < 0.3
+
+    return X, y, feature_cols, is_imbalanced, class_counts
+
+
 @analise_bp.route('/analise', methods=['GET'])
 def analise():
-    lat = request.args.get('lat', default=-23.5505, type=float)
-    lon = request.args.get('lon', default=-46.6333, type=float)
+    lat, lon = validar_coordenadas(
+        request.args.get('lat', default=_DEFAULT_LAT),
+        request.args.get('lon', default=_DEFAULT_LON),
+    )
     use_enhanced = request.args.get('enhanced', default='true', type=str).lower() == 'true'
 
-    try:
-        df = carregar_dados(lat, lon)
+    X, y, feature_cols, is_imbalanced, class_counts = _preparar_dataset(lat, lon, use_enhanced)
 
-        # Preparar dados com ou sem features derivadas
-        frame = _prepare_training_frame(df, use_enhanced_features=use_enhanced)
+    # Split estratificado
+    x_train, x_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-        # Selecionar features baseado na configuração
-        feature_cols = ENHANCED_FEATURES if use_enhanced else BASE_FEATURES
-        feature_cols = [f for f in feature_cols if f in frame.columns]
+    # Pipeline (scaler + ensemble): a normalização é ajustada só no treino.
+    model = build_ensemble_pipeline(is_imbalanced)
+    model.fit(x_train, y_train)
 
-        X = frame[feature_cols]
-        y = frame['risk']
+    y_pred = model.predict(x_test)
+    y_pred_proba = model.predict_proba(x_test)[:, 1] if hasattr(model, 'predict_proba') else None
 
-        # Verificar desbalanceamento
-        class_counts = y.value_counts()
-        is_imbalanced = len(class_counts) > 1 and (class_counts.min() / class_counts.max()) < 0.3
-        class_weight = 'balanced' if is_imbalanced else None
+    # Métricas completas
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
 
-        # Split estratificado
-        x_train, x_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+    report = _convert_numpy_types(classification_report(y_test, y_pred, output_dict=True, zero_division=0))
+    conf_matrix = confusion_matrix(y_test, y_pred)
 
-        # Normalização
-        scaler = StandardScaler()
-        x_train_scaled = scaler.fit_transform(x_train)
-        x_test_scaled = scaler.transform(x_test)
+    # Validação cruzada estratificada usando o PIPELINE (sem data leakage).
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_pipeline = build_ensemble_pipeline(is_imbalanced)
+    cv_scores = cross_val_score(cv_pipeline, X, y, cv=cv, scoring='accuracy')
+    cv_f1_scores = cross_val_score(cv_pipeline, X, y, cv=cv, scoring='f1_weighted')
 
-        # Modelo otimizado com ensemble
-        rf = RandomForestClassifier(
-            n_estimators=300, max_depth=15, min_samples_split=5,
-            min_samples_leaf=2, max_features='sqrt',
-            class_weight=class_weight, random_state=42, n_jobs=-1
-        )
-        gb = GradientBoostingClassifier(
-            n_estimators=150, max_depth=5, learning_rate=0.1,
-            min_samples_split=5, min_samples_leaf=2, random_state=42
-        )
-        model = VotingClassifier(
-            estimators=[('rf', rf), ('gb', gb)],
-            voting='soft', n_jobs=-1
-        )
-        model.fit(x_train_scaled, y_train)
+    # ROC-AUC se possível
+    roc_auc = None
+    if y_pred_proba is not None and len(np.unique(y_test)) == 2:
+        try:
+            roc_auc = float(roc_auc_score(y_test, y_pred_proba))
+        except ValueError:
+            roc_auc = None
 
-        y_pred = model.predict(x_test_scaled)
-        y_pred_proba = model.predict_proba(x_test_scaled)[:, 1] if hasattr(model, 'predict_proba') else None
+    # Importância das variáveis (do Random Forest dentro do ensemble do pipeline)
+    rf_model = model.named_steps['ensemble'].named_estimators_['rf']
+    feat_importances = pd.Series(rf_model.feature_importances_, index=feature_cols)
 
-        # Métricas completas
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted')
-        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    distribuicao_classes = {int(k): int(v) for k, v in class_counts.to_dict().items()}
 
-        report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
-        # Converter tipos numpy no relatório
-        report = _convert_numpy_types(report)
-        conf_matrix = confusion_matrix(y_test, y_pred)
-
-        # Validação cruzada estratificada
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        cv_scores = cross_val_score(model, scaler.fit_transform(X), y, cv=cv, scoring='accuracy')
-        cv_f1_scores = cross_val_score(model, scaler.fit_transform(X), y, cv=cv, scoring='f1_weighted')
-
-        # ROC-AUC se possível
-        roc_auc = None
-        if y_pred_proba is not None and len(np.unique(y_test)) == 2:
-            try:
-                roc_auc = float(roc_auc_score(y_test, y_pred_proba))
-            except:
-                pass
-
-        # Importância das variáveis (do Random Forest do ensemble)
-        rf_model = model.named_estimators_['rf']
-        feat_importances = pd.Series(rf_model.feature_importances_, index=feature_cols)
-
-        # Converter distribuição de classes para tipos Python nativos
-        distribuicao_classes = {int(k): int(v) for k, v in class_counts.to_dict().items()}
-
-        response = {
-            "acuracia": float(accuracy),
-            "f1_score": float(f1),
-            "precisao": float(precision),
-            "recall": float(recall),
-            "roc_auc": roc_auc,
-            "relatorio_classificacao": report,
-            "matriz_confusao": conf_matrix.tolist(),
-            "validacao_cruzada": {
-                "accuracy_scores": cv_scores.tolist(),
-                "accuracy_mean": float(cv_scores.mean()),
-                "accuracy_std": float(cv_scores.std()),
-                "f1_scores": cv_f1_scores.tolist(),
-                "f1_mean": float(cv_f1_scores.mean()),
-                "f1_std": float(cv_f1_scores.std())
-            },
-            "importancia_variaveis": {k: float(v) for k, v in feat_importances.to_dict().items()},
-            "configuracao": {
-                "features_usadas": feature_cols,
-                "total_features": len(feature_cols),
-                "enhanced_features": bool(use_enhanced),
-                "classe_desbalanceada": bool(is_imbalanced),
-                "total_amostras": int(len(y)),
-                "amostras_treino": int(len(y_train)),
-                "amostras_teste": int(len(y_test)),
-                "distribuicao_classes": distribuicao_classes
-            }
+    response = {
+        "acuracia": float(accuracy),
+        "f1_score": float(f1),
+        "precisao": float(precision),
+        "recall": float(recall),
+        "roc_auc": roc_auc,
+        "relatorio_classificacao": report,
+        "matriz_confusao": conf_matrix.tolist(),
+        "validacao_cruzada": {
+            "accuracy_scores": cv_scores.tolist(),
+            "accuracy_mean": float(cv_scores.mean()),
+            "accuracy_std": float(cv_scores.std()),
+            "f1_scores": cv_f1_scores.tolist(),
+            "f1_mean": float(cv_f1_scores.mean()),
+            "f1_std": float(cv_f1_scores.std())
+        },
+        "importancia_variaveis": {k: float(v) for k, v in feat_importances.to_dict().items()},
+        "configuracao": {
+            "features_usadas": feature_cols,
+            "total_features": len(feature_cols),
+            "enhanced_features": bool(use_enhanced),
+            "classe_desbalanceada": bool(is_imbalanced),
+            "total_amostras": int(len(y)),
+            "amostras_treino": int(len(y_train)),
+            "amostras_teste": int(len(y_test)),
+            "distribuicao_classes": distribuicao_classes
         }
+    }
 
-        return jsonify(response)
-
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    return jsonify(response)
 
 
 @analise_bp.route('/analise/graficos', methods=['GET'])
 def analise_graficos():
-    lat = request.args.get('lat', default=-23.5505, type=float)
-    lon = request.args.get('lon', default=-46.6333, type=float)
+    lat, lon = validar_coordenadas(
+        request.args.get('lat', default=_DEFAULT_LAT),
+        request.args.get('lon', default=_DEFAULT_LON),
+    )
     use_enhanced = request.args.get('enhanced', default='true', type=str).lower() == 'true'
 
+    X, y, feature_cols, is_imbalanced, _ = _preparar_dataset(lat, lon, use_enhanced)
+
+    x_train, x_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    model = build_ensemble_pipeline(is_imbalanced)
+    model.fit(x_train, y_train)
+
+    y_pred = model.predict(x_test)
+    conf_matrix = confusion_matrix(y_test, y_pred)
+
+    rf_model = model.named_steps['ensemble'].named_estimators_['rf']
+    feat_importances = pd.Series(rf_model.feature_importances_, index=feature_cols)
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     try:
-        df = carregar_dados(lat, lon)
-
-        # Preparar dados com ou sem features derivadas
-        frame = _prepare_training_frame(df, use_enhanced_features=use_enhanced)
-
-        # Selecionar features
-        feature_cols = ENHANCED_FEATURES if use_enhanced else BASE_FEATURES
-        feature_cols = [f for f in feature_cols if f in frame.columns]
-
-        X = frame[feature_cols]
-        y = frame['risk']
-
-        # Verificar desbalanceamento
-        class_counts = y.value_counts()
-        is_imbalanced = len(class_counts) > 1 and (class_counts.min() / class_counts.max()) < 0.3
-        class_weight = 'balanced' if is_imbalanced else None
-
-        x_train, x_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-
-        # Normalização
-        scaler = StandardScaler()
-        x_train_scaled = scaler.fit_transform(x_train)
-        x_test_scaled = scaler.transform(x_test)
-
-        # Modelo otimizado
-        rf = RandomForestClassifier(
-            n_estimators=300, max_depth=15, min_samples_split=5,
-            min_samples_leaf=2, max_features='sqrt',
-            class_weight=class_weight, random_state=42, n_jobs=-1
-        )
-        gb = GradientBoostingClassifier(
-            n_estimators=150, max_depth=5, learning_rate=0.1,
-            min_samples_split=5, min_samples_leaf=2, random_state=42
-        )
-        model = VotingClassifier(
-            estimators=[('rf', rf), ('gb', gb)],
-            voting='soft', n_jobs=-1
-        )
-        model.fit(x_train_scaled, y_train)
-
-        y_pred = model.predict(x_test_scaled)
-        conf_matrix = confusion_matrix(y_test, y_pred)
-
-        # Importância das variáveis do Random Forest
-        rf_model = model.named_estimators_['rf']
-        feat_importances = pd.Series(rf_model.feature_importances_, index=feature_cols)
-
-        # Criar figura com 3 subplots
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-
         # Matriz de Confusão
         sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', ax=axes[0])
         axes[0].set_title('Matriz de Confusão')
@@ -223,9 +175,9 @@ def analise_graficos():
         axes[1].set_title('Importância das Variáveis')
         axes[1].set_xlabel('Importância')
 
-        # Validação Cruzada Scores
+        # Validação Cruzada Scores (com pipeline, sem leakage)
         cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        cv_scores = cross_val_score(model, scaler.fit_transform(X), y, cv=cv, scoring='accuracy')
+        cv_scores = cross_val_score(build_ensemble_pipeline(is_imbalanced), X, y, cv=cv, scoring='accuracy')
         axes[2].bar(range(1, 6), cv_scores, color='steelblue', alpha=0.7)
         axes[2].axhline(y=cv_scores.mean(), color='red', linestyle='--', label=f'Média: {cv_scores.mean():.3f}')
         axes[2].set_title('Validação Cruzada (5-Fold)')
@@ -236,13 +188,9 @@ def analise_graficos():
 
         plt.tight_layout()
 
-        # Salvar e retornar a imagem
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches='tight')
         buf.seek(0)
-        plt.close()
-
         return send_file(buf, mimetype='image/png')
-
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    finally:
+        plt.close(fig)

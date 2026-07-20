@@ -48,15 +48,21 @@ Rode o comando abaixo para criar um container docker:
 
 
 ### 🔑 Configuração das Chaves de API
-Crie um arquivo `.env` na raiz do projeto e adicione suas credenciais:
+Copie o arquivo de exemplo e preencha suas credenciais:
+```bash
+cp .env.example .env
+```
 ```ini
 METEOSTAT_API_KEY=suachave_meteostat
-METEOSTAT_API_HOST=suahost_meteostat
+METEOSTAT_API_HOST=meteostat.p.rapidapi.com
 AEROAPI_KEY=suachave_aeroapi
-MONGO_URI=api_mongodb
-MONGOD_DATASET=base_de_dados
-MONGO_COLLECTION=coleção
+MONGO_URI=mongodb://localhost:27017
+MONGOD_DB=base_de_dados
+MONGO_COLLECTION=colecao
 ```
+> ℹ️ As variáveis usadas pela aplicação são `MONGOD_DB` e `MONGO_COLLECTION`.
+> Variáveis opcionais (`FLASK_DEBUG`, `PORT`, `LOG_LEVEL`, etc.) estão listadas em `.env.example`.
+
 ---
 
 ## 🛠️ Endpoints da API
@@ -144,6 +150,43 @@ Exporta os dados meteorológicos para um arquivo Excel.
 curl "http://localhost:5000/exportar_excel?lat=-23.5505&lon=-46.6333" -o dados.xlsx
 ```
 
+### 6️⃣ Mapa com Rotas Alternativas e Aeroportos no Caminho
+**Endpoint:** `GET /mapa_sugerido`  
+Renderiza um mapa interativo (Folium) com:
+- A **rota direta** desenhada como geodésica (great-circle) curva e realista.
+- Os **aeroportos que ficam no corredor** entre origem e destino (base de hubs principais).
+- **Rotas alternativas** com escala (`origem → hub → destino`), cada uma com o desvio em km.
+- Camadas alternáveis (rota direta, aeroportos, alternativas, rotas registradas na AeroAPI).
+
+Parâmetros:
+- `origem_id`, `destino_id`, `data` — obrigatórios.
+- `corredor_km` — largura do corredor considerado "no caminho" (padrão 400).
+- `limite` — número máximo de aeroportos intermediários exibidos (padrão 12, por menor desvio).
+- `internacionais` — `true` (padrão) mostra só aeroportos internacionais; `false` inclui todos com código IATA no corredor.
+- `formato=json` — retorna os dados estruturados em vez do mapa HTML.
+
+> 📚 **Fonte dos aeroportos:** a base `data/airports.json` (~7,9 mil aeroportos com código IATA)
+> é derivada da [OurAirports](https://ourairports.com/) e gerada offline por
+> `scripts/build_airports.py` (via o pacote `airportsdata`). A aplicação em runtime lê apenas o
+> JSON — sem dependência extra nem chamadas de rede. Para regenerar:
+> ```bash
+> pip install -r requirements-dev.txt
+> python scripts/build_airports.py
+> ```
+
+📤 **Exemplo (mapa HTML):**
+```bash
+curl "http://localhost:5000/mapa_sugerido?origem_id=GRU&destino_id=JFK&data=2024-10-15" -o mapa.html
+```
+
+📤 **Exemplo (dados em JSON):**
+```bash
+curl "http://localhost:5000/mapa_sugerido?origem_id=GRU&destino_id=JFK&data=2024-10-15&corredor_km=500&formato=json"
+```
+
+### ❤️ Healthcheck
+**Endpoint:** `GET /health` — retorna `{"status": "ok"}` (usado pelo Docker healthcheck).
+
 ---
 
 ## 🧠 Cache de Modelos (RandomForest + Prophet)
@@ -180,10 +223,25 @@ clear_model_cache(lat=-23.5505, lon=-46.6333)
 ```bash
 python app.py
 ```
+> Para habilitar o modo debug do Flask, defina `FLASK_DEBUG=true` (desabilitado por padrão por segurança).
+
 2️⃣ A API estará disponível em:
 ```bash
 http://localhost:5000
 ```
+
+### 🏭 Modo de Produção
+A imagem Docker roda com **gunicorn** (servidor WSGI de produção), não com o servidor de desenvolvimento do Flask:
+```bash
+gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 4 app:app
+```
+
+### ✅ Testes
+```bash
+pip install pytest
+pytest
+```
+O CI (GitHub Actions) executa a suíte automaticamente em cada push/pull request.
 
 ---
 

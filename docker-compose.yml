@@ -6,6 +6,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   app:
     build: .
@@ -19,8 +24,10 @@ services:
       - MONGO_URI=${MONGO_URI}
       - MONGOD_DB=${MONGOD_DB}
       - MONGO_COLLECTION=${MONGO_COLLECTION}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
 
 volumes:
   mongo-data:

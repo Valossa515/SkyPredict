@@ -1,0 +1,9 @@
+# Dependências apenas de desenvolvimento/build (não necessárias em runtime).
+-r requirements.txt
+
+# Testes
+pytest
+
+# Geração de data/airports.json (base OurAirports empacotada offline).
+# Usado por scripts/build_airports.py — a aplicação lê apenas o JSON gerado.
+airportsdata==20260315

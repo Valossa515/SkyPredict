@@ -44,15 +44,19 @@ def test_mapa_formato_json(client, monkeypatch):
     monkeypatch.setattr(mapa, "gerar_sugestao_rota", fake_sugestao)
     monkeypatch.setattr(mapa, "obter_coordenadas_aeroporto", lambda i: coords[i])
 
-    resp = client.get("/mapa_sugerido?origem_id=GRU&destino_id=JFK&data=2024-10-15&formato=json&corredor_km=500")
+    resp = client.get("/mapa_sugerido?origem_id=GRU&destino_id=JFK&data=2024-10-15&formato=json&corredor_km=500&limite=8")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["origem"] == "GRU"
     assert data["distancia_direta_km"] > 7000
     assert "aeroportos_no_caminho" in data
     assert "rotas_alternativas" in data
-    iatas = {a["iata"] for a in data["aeroportos_no_caminho"]}
-    assert "BSB" in iatas
+    aeroportos = data["aeroportos_no_caminho"]
+    assert aeroportos  # encontrou hubs no caminho
+    assert len(aeroportos) <= 8  # respeita o limite
+    # cada rota alternativa é uma escala origem -> hub -> destino
+    for alt in data["rotas_alternativas"]:
+        assert alt["escalas"][0] == "GRU" and alt["escalas"][-1] == "JFK"
 
 
 def test_mapa_html(client, monkeypatch):

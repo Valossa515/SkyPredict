@@ -158,8 +158,21 @@ Renderiza um mapa interativo (Folium) com:
 - **Rotas alternativas** com escala (`origem → hub → destino`), cada uma com o desvio em km.
 - Camadas alternáveis (rota direta, aeroportos, alternativas, rotas registradas na AeroAPI).
 
-Parâmetros: `origem_id`, `destino_id`, `data` (obrigatórios); `corredor_km` (opcional, padrão 400);
-`formato=json` para receber os dados estruturados em vez do mapa HTML.
+Parâmetros:
+- `origem_id`, `destino_id`, `data` — obrigatórios.
+- `corredor_km` — largura do corredor considerado "no caminho" (padrão 400).
+- `limite` — número máximo de aeroportos intermediários exibidos (padrão 12, por menor desvio).
+- `internacionais` — `true` (padrão) mostra só aeroportos internacionais; `false` inclui todos com código IATA no corredor.
+- `formato=json` — retorna os dados estruturados em vez do mapa HTML.
+
+> 📚 **Fonte dos aeroportos:** a base `data/airports.json` (~7,9 mil aeroportos com código IATA)
+> é derivada da [OurAirports](https://ourairports.com/) e gerada offline por
+> `scripts/build_airports.py` (via o pacote `airportsdata`). A aplicação em runtime lê apenas o
+> JSON — sem dependência extra nem chamadas de rede. Para regenerar:
+> ```bash
+> pip install -r requirements-dev.txt
+> python scripts/build_airports.py
+> ```
 
 📤 **Exemplo (mapa HTML):**
 ```bash

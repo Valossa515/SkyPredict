@@ -10,6 +10,8 @@ mapa_bp = Blueprint('mapa', __name__)
 
 # Corredor padrão (km) para considerar um aeroporto "no caminho".
 _CORREDOR_PADRAO_KM = 400.0
+# Máximo de aeroportos intermediários exibidos por padrão (os de menor desvio).
+_LIMITE_PADRAO = 12
 
 
 def _extract_lat_lon(aeroapi_result):
@@ -32,7 +34,7 @@ def _extract_lat_lon(aeroapi_result):
     )
 
 
-def _coletar_dados_rota(origem_id, destino_id, data_futura, corredor_km):
+def _coletar_dados_rota(origem_id, destino_id, data_futura, corredor_km, limite, internacionais):
     """Reúne sugestão, coordenadas e aeroportos intermediários da rota."""
     sugestao_data = gerar_sugestao_rota(origem_id, destino_id, data_futura)
 
@@ -43,6 +45,8 @@ def _coletar_dados_rota(origem_id, destino_id, data_futura, corredor_km):
         lat_o, lon_o, lat_d, lon_d,
         corredor_km=corredor_km,
         excluir_iatas=[sugestao_data['origem'], sugestao_data['destino']],
+        limite=limite,
+        somente_internacionais=internacionais,
     )
 
     return sugestao_data, (lat_o, lon_o), (lat_d, lon_d), intermediarios
@@ -54,6 +58,8 @@ def mostrar_mapa_sugerido_animado_html():
     destino_id = request.args.get('destino_id')
     data_futura = request.args.get('data')
     corredor_km = request.args.get('corredor_km', default=_CORREDOR_PADRAO_KM, type=float)
+    limite = request.args.get('limite', default=_LIMITE_PADRAO, type=int)
+    internacionais = request.args.get('internacionais', default='true', type=str).lower() != 'false'
     formato = request.args.get('formato', default='html', type=str).lower()
 
     if not origem_id or not destino_id or not data_futura:
@@ -62,7 +68,7 @@ def mostrar_mapa_sugerido_animado_html():
     validar_data(data_futura)
 
     sugestao_data, (lat_o, lon_o), (lat_d, lon_d), intermediarios = _coletar_dados_rota(
-        origem_id, destino_id, data_futura, corredor_km
+        origem_id, destino_id, data_futura, corredor_km, limite, internacionais
     )
 
     origem = sugestao_data['origem']
@@ -85,6 +91,8 @@ def mostrar_mapa_sugerido_animado_html():
                 {
                     "via": apt["iata"],
                     "nome": apt["nome"],
+                    "cidade": apt.get("cidade", ""),
+                    "pais": apt.get("pais", ""),
                     "escalas": [origem, apt["iata"], destino],
                     "desvio_km": apt["desvio_rota_km"],
                 }
@@ -125,10 +133,12 @@ def mostrar_mapa_sugerido_animado_html():
         lat_a, lon_a = apt["lat"], apt["lon"]
         cor = cores[i % len(cores)]
 
+        local = ", ".join(p for p in (apt.get("cidade"), apt.get("pais")) if p)
         folium.Marker(
             [lat_a, lon_a],
             popup=(
-                f"<b>{apt['iata']}</b> — {apt['nome']}<br>"
+                f"<b>{apt['iata']}</b> ({apt.get('icao', '')}) — {apt['nome']}<br>"
+                f"{local}<br>"
                 f"Escala: {origem} → {apt['iata']} → {destino}<br>"
                 f"Desvio: +{apt['desvio_rota_km']} km<br>"
                 f"Distância da rota direta: {apt['distancia_da_rota_km']} km"

@@ -31,12 +31,35 @@ def test_pontos_geodesicos_inclui_extremos():
 
 def test_aeroportos_no_corredor_encontra_intermediarios():
     inter = aeroportos_no_corredor(*GRU, *JFK, corredor_km=500, excluir_iatas=["GRU", "JFK"])
-    iatas = {a["iata"] for a in inter}
-    # Brasília fica claramente no caminho GRU -> JFK
-    assert "BSB" in iatas
+    assert inter  # deve encontrar aeroportos no caminho
     # ordenado por menor desvio
     desvios = [a["desvio_rota_km"] for a in inter]
     assert desvios == sorted(desvios)
+    # todos dentro do corredor
+    assert all(a["distancia_da_rota_km"] <= 500 for a in inter)
+    # Brasília (Intl) está no caminho GRU -> JFK (lista completa, sem limite)
+    assert "BSB" in {a["iata"] for a in inter}
+
+
+def test_default_somente_internacionais():
+    inter = aeroportos_no_corredor(*GRU, *JFK, corredor_km=500, excluir_iatas=["GRU", "JFK"])
+    assert all(
+        ("international" in a["nome"].lower()) or ("intl" in a["nome"].lower())
+        for a in inter
+    )
+
+
+def test_incluir_todos_amplia_resultados():
+    intl = aeroportos_no_corredor(*GRU, *JFK, corredor_km=400, excluir_iatas=["GRU", "JFK"])
+    todos = aeroportos_no_corredor(
+        *GRU, *JFK, corredor_km=400, excluir_iatas=["GRU", "JFK"], somente_internacionais=False
+    )
+    assert len(todos) >= len(intl)
+
+
+def test_limite_corta_resultados():
+    top5 = aeroportos_no_corredor(*GRU, *JFK, corredor_km=500, excluir_iatas=["GRU", "JFK"], limite=5)
+    assert len(top5) <= 5
 
 
 def test_aeroportos_no_corredor_respeita_exclusao():
@@ -52,7 +75,7 @@ def test_corredor_estreito_reduz_resultados():
 
 def test_base_aeroportos_valida():
     aps = carregar_aeroportos()
-    assert len(aps) > 50
+    assert len(aps) > 1000  # base completa da OurAirports (~7,9 mil com IATA)
     for a in aps:
         assert -90 <= a["lat"] <= 90
         assert -180 <= a["lon"] <= 180

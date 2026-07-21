@@ -31,36 +31,66 @@ def _avaliar_risco_por_modelo(df: pd.DataFrame, data_futura: str, lat: float, lo
     risk = int(prever_com_modelo(previsoes, model, lat, lon, data_futura)[0])
     return risk, None
 
-def gerar_sugestao_rota(origem_id, destino_id, data_futura):
+def _avaliar_risco(lat, lon, data_futura):
+    df = carregar_dados(lat, lon)
+    risco, score = _avaliar_risco_do_df(df, data_futura)
+    if risco is None:
+        risco, score = _avaliar_risco_por_modelo(df, data_futura, lat, lon)
+    return risco, score
+
+
+def _rotulo_risco(risco):
+    if risco == 1:
+        return "Alto"
+    if risco == 0:
+        return "Baixo"
+    return "Indisponível"
+
+
+def gerar_sugestao_rota(origem_id, destino_id, data_futura,
+                        coord_resolver=None, rotas_provider=None,
+                        risco_resiliente=False):
+    """Gera a sugestão de rota com avaliação de risco meteorológico.
+
+    Por padrão usa a AeroAPI para coordenadas e rotas. Os parâmetros
+    ``coord_resolver`` e ``rotas_provider`` permitem injetar outras fontes
+    (ex.: base local de aeroportos), o que habilita um modo offline/demo sem
+    depender da AeroAPI. Com ``risco_resiliente=True``, falhas ao obter os
+    dados meteorológicos não interrompem a resposta — o risco fica
+    "Indisponível" e o restante (rota, aeroportos) continua sendo retornado.
+    """
+    coord_resolver = coord_resolver or obter_coordenadas_aeroporto
+    rotas_provider = rotas_provider or obter_rotas_aeroporto
+
     datetime.strptime(data_futura, '%Y-%m-%d')
 
-    lat_origem, lon_origem = obter_coordenadas_aeroporto(origem_id)
-    lat_destino, lon_destino = obter_coordenadas_aeroporto(destino_id)
+    lat_origem, lon_origem = coord_resolver(origem_id)
+    lat_destino, lon_destino = coord_resolver(destino_id)
 
-    df_origem = carregar_dados(lat_origem, lon_origem)
-    risco_origem, score_origem = _avaliar_risco_do_df(df_origem, data_futura)
-    if risco_origem is None:
-        risco_origem, score_origem = _avaliar_risco_por_modelo(df_origem, data_futura, lat_origem, lon_origem)
+    try:
+        risco_origem, score_origem = _avaliar_risco(lat_origem, lon_origem, data_futura)
+        risco_destino, score_destino = _avaliar_risco(lat_destino, lon_destino, data_futura)
+    except Exception:
+        if not risco_resiliente:
+            raise
+        risco_origem = risco_destino = None
+        score_origem = score_destino = None
 
-    df_destino = carregar_dados(lat_destino, lon_destino)
-    risco_destino, score_destino = _avaliar_risco_do_df(df_destino, data_futura)
-    if risco_destino is None:
-        risco_destino, score_destino = _avaliar_risco_por_modelo(df_destino, data_futura, lat_destino, lon_destino)
+    rotas = rotas_provider(origem_id, destino_id)
 
-    rotas = obter_rotas_aeroporto(origem_id, destino_id)
-
-    sugestao = (
-        "Evitar voo devido a alto risco meteorológico."
-        if (risco_origem == 1 or risco_destino == 1)
-        else "Rota segura. Risco meteorológico baixo."
-    )
+    if risco_origem == 1 or risco_destino == 1:
+        sugestao = "Evitar voo devido a alto risco meteorológico."
+    elif risco_origem is None and risco_destino is None:
+        sugestao = "Risco meteorológico indisponível (dados climáticos não obtidos)."
+    else:
+        sugestao = "Rota segura. Risco meteorológico baixo."
 
     payload = {
         "origem": origem_id,
         "destino": destino_id,
         "data": data_futura,
-        "risco_origem": "Alto" if risco_origem == 1 else "Baixo",
-        "risco_destino": "Alto" if risco_destino == 1 else "Baixo",
+        "risco_origem": _rotulo_risco(risco_origem),
+        "risco_destino": _rotulo_risco(risco_destino),
         "rotas": rotas,
         "sugestao": sugestao,
     }

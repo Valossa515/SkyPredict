@@ -163,7 +163,13 @@ Parâmetros:
 - `corredor_km` — largura do corredor considerado "no caminho" (padrão 400).
 - `limite` — número máximo de aeroportos intermediários exibidos (padrão 12, por menor desvio).
 - `internacionais` — `true` (padrão) mostra só aeroportos internacionais; `false` inclui todos com código IATA no corredor.
+- `fonte` — `aeroapi` (padrão) usa a AeroAPI para as coordenadas; `local` resolve pela base `data/airports.json`, **sem AeroAPI** (ideal para visualizar o mapa sem a chave paga). No modo `local`, o risco meteorológico fica "Indisponível" caso a Meteostat não esteja configurada.
 - `formato=json` — retorna os dados estruturados em vez do mapa HTML.
+
+📤 **Exemplo sem a AeroAPI (modo local):**
+```bash
+curl "http://localhost:5000/mapa_sugerido?origem_id=GRU&destino_id=JFK&data=2025-08-15&fonte=local" -o mapa.html
+```
 
 > 📚 **Fonte dos aeroportos:** a base `data/airports.json` (~7,9 mil aeroportos com código IATA)
 > é derivada da [OurAirports](https://ourairports.com/) e gerada offline por

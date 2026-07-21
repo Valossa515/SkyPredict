@@ -3,7 +3,8 @@ import folium
 
 from services.aeroapi_service import obter_coordenadas_aeroporto
 from services.rota_service import gerar_sugestao_rota
-from services.geo_service import pontos_geodesicos, aeroportos_no_corredor, distancia_km
+from services.geo_service import (pontos_geodesicos, aeroportos_no_corredor, distancia_km,
+                                  coordenadas_locais)
 from services.validators import validar_data
 
 mapa_bp = Blueprint('mapa', __name__)
@@ -34,12 +35,28 @@ def _extract_lat_lon(aeroapi_result):
     )
 
 
-def _coletar_dados_rota(origem_id, destino_id, data_futura, corredor_km, limite, internacionais):
-    """Reúne sugestão, coordenadas e aeroportos intermediários da rota."""
-    sugestao_data = gerar_sugestao_rota(origem_id, destino_id, data_futura)
+def _coletar_dados_rota(origem_id, destino_id, data_futura, corredor_km, limite,
+                        internacionais, fonte):
+    """Reúne sugestão, coordenadas e aeroportos intermediários da rota.
 
-    lat_o, lon_o = _extract_lat_lon(obter_coordenadas_aeroporto(sugestao_data['origem']))
-    lat_d, lon_d = _extract_lat_lon(obter_coordenadas_aeroporto(sugestao_data['destino']))
+    ``fonte='local'`` resolve coordenadas pela base local (data/airports.json) e
+    dispensa a AeroAPI — útil para visualizar o mapa sem a chave paga. Nesse
+    modo, o risco meteorológico é resiliente (fica "Indisponível" se a Meteostat
+    não estiver configurada) e as rotas registradas da AeroAPI são omitidas.
+    """
+    if fonte == 'local':
+        sugestao_data = gerar_sugestao_rota(
+            origem_id, destino_id, data_futura,
+            coord_resolver=coordenadas_locais,
+            rotas_provider=lambda o, d: {"routes": []},
+            risco_resiliente=True,
+        )
+        lat_o, lon_o = coordenadas_locais(sugestao_data['origem'])
+        lat_d, lon_d = coordenadas_locais(sugestao_data['destino'])
+    else:
+        sugestao_data = gerar_sugestao_rota(origem_id, destino_id, data_futura)
+        lat_o, lon_o = _extract_lat_lon(obter_coordenadas_aeroporto(sugestao_data['origem']))
+        lat_d, lon_d = _extract_lat_lon(obter_coordenadas_aeroporto(sugestao_data['destino']))
 
     intermediarios = aeroportos_no_corredor(
         lat_o, lon_o, lat_d, lon_d,
@@ -60,6 +77,7 @@ def mostrar_mapa_sugerido_animado_html():
     corredor_km = request.args.get('corredor_km', default=_CORREDOR_PADRAO_KM, type=float)
     limite = request.args.get('limite', default=_LIMITE_PADRAO, type=int)
     internacionais = request.args.get('internacionais', default='true', type=str).lower() != 'false'
+    fonte = request.args.get('fonte', default='aeroapi', type=str).lower()
     formato = request.args.get('formato', default='html', type=str).lower()
 
     if not origem_id or not destino_id or not data_futura:
@@ -68,7 +86,7 @@ def mostrar_mapa_sugerido_animado_html():
     validar_data(data_futura)
 
     sugestao_data, (lat_o, lon_o), (lat_d, lon_d), intermediarios = _coletar_dados_rota(
-        origem_id, destino_id, data_futura, corredor_km, limite, internacionais
+        origem_id, destino_id, data_futura, corredor_km, limite, internacionais, fonte
     )
 
     origem = sugestao_data['origem']
@@ -103,16 +121,19 @@ def mostrar_mapa_sugerido_animado_html():
     # ---------- Renderização do mapa ----------
     mapa = folium.Map(location=[(lat_o + lat_d) / 2, (lon_o + lon_d) / 2], zoom_start=4)
 
+    def _cor_risco(risco):
+        return {"Alto": "red", "Baixo": "green"}.get(risco, "gray")
+
     # Marcadores origem/destino
     folium.Marker(
         [lat_o, lon_o],
         popup=f"Origem: {origem}<br>Risco: {risco_origem}<br>Sugestão: {sugestao}",
-        icon=folium.Icon(color='red' if risco_origem == "Alto" else 'green', icon='plane', prefix='fa')
+        icon=folium.Icon(color=_cor_risco(risco_origem), icon='plane', prefix='fa')
     ).add_to(mapa)
     folium.Marker(
         [lat_d, lon_d],
         popup=f"Destino: {destino}<br>Risco: {risco_destino}<br>Sugestão: {sugestao}",
-        icon=folium.Icon(color='red' if risco_destino == "Alto" else 'green', icon='plane', prefix='fa')
+        icon=folium.Icon(color=_cor_risco(risco_destino), icon='plane', prefix='fa')
     ).add_to(mapa)
 
     # Rota direta (geodésica curva)

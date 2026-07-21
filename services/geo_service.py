@@ -29,6 +29,27 @@ def carregar_aeroportos():
 
 
 @lru_cache(maxsize=1)
+def _indice_por_iata():
+    """Índice {IATA -> aeroporto} para busca rápida por código."""
+    return {a["iata"].upper(): a for a in carregar_aeroportos()}
+
+
+def buscar_aeroporto(iata):
+    """Retorna o dict do aeroporto pelo código IATA, ou None se não existir."""
+    return _indice_por_iata().get((iata or "").upper())
+
+
+def coordenadas_locais(iata):
+    """Coordenadas (lat, lon) de um aeroporto pela base local (sem AeroAPI)."""
+    apt = buscar_aeroporto(iata)
+    if apt is None:
+        raise ValueError(
+            f"Aeroporto '{iata}' não encontrado na base local (data/airports.json)."
+        )
+    return apt["lat"], apt["lon"]
+
+
+@lru_cache(maxsize=1)
 def _arrays_aeroportos():
     """Arrays numpy (lat, lon) alinhados à lista de aeroportos, para vetorização."""
     apts = carregar_aeroportos()

@@ -80,12 +80,39 @@ def mostrar_mapa_sugerido_animado_html():
 
     dist_direta = distancia_km(lat_o, lon_o, lat_d, lon_d)
 
+    # Rota sugerida explícita: direta quando o risco é baixo (ou não há
+    # alternativa no corredor); caso contrário, o aeroporto de menor desvio.
+    risco_alto = risco_origem == "Alto" or risco_destino == "Alto"
+    melhor_alternativa = intermediarios[0] if intermediarios else None
+    sugerir_alternativa = risco_alto and melhor_alternativa is not None
+
+    if sugerir_alternativa:
+        local_alt = ", ".join(p for p in (melhor_alternativa.get("cidade"), melhor_alternativa.get("pais")) if p)
+        rota_sugerida_desc = (
+            f"Via {melhor_alternativa['iata']}"
+            + (f" ({local_alt})" if local_alt else "")
+            + f" — desvio de +{melhor_alternativa['desvio_rota_km']} km, "
+            "recomendada por causa do risco meteorológico alto na rota direta"
+        )
+    elif risco_alto:
+        rota_sugerida_desc = (
+            f"Voo direto ({round(dist_direta)} km) — risco meteorológico alto, "
+            f"mas nenhum aeroporto alternativo foi encontrado no corredor de {round(corredor_km)} km"
+        )
+    else:
+        rota_sugerida_desc = f"Voo direto ({round(dist_direta)} km) — risco meteorológico baixo"
+
     # Modo JSON: útil para clientes/programas e para testes automatizados.
     if formato == 'json':
         return jsonify({
             **{k: v for k, v in sugestao_data.items() if k != '_id'},
             "distancia_direta_km": round(dist_direta, 1),
             "corredor_km": corredor_km,
+            "rota_sugerida": {
+                "descricao": rota_sugerida_desc,
+                "via_escala": sugerir_alternativa,
+                "aeroporto_escala": melhor_alternativa["iata"] if sugerir_alternativa else None,
+            },
             "aeroportos_no_caminho": intermediarios,
             "rotas_alternativas": [
                 {
@@ -106,32 +133,49 @@ def mostrar_mapa_sugerido_animado_html():
     # Marcadores origem/destino
     folium.Marker(
         [lat_o, lon_o],
-        popup=f"Origem: {origem}<br>Risco: {risco_origem}<br>Sugestão: {sugestao}",
+        popup=(
+            f"Origem: {origem}<br>Risco: {risco_origem}<br>Sugestão: {sugestao}<br>"
+            f"<b>🧭 Rota sugerida:</b> {rota_sugerida_desc}"
+        ),
         icon=folium.Icon(color='red' if risco_origem == "Alto" else 'green', icon='plane', prefix='fa')
     ).add_to(mapa)
     folium.Marker(
         [lat_d, lon_d],
-        popup=f"Destino: {destino}<br>Risco: {risco_destino}<br>Sugestão: {sugestao}",
+        popup=(
+            f"Destino: {destino}<br>Risco: {risco_destino}<br>Sugestão: {sugestao}<br>"
+            f"<b>🧭 Rota sugerida:</b> {rota_sugerida_desc}"
+        ),
         icon=folium.Icon(color='red' if risco_destino == "Alto" else 'green', icon='plane', prefix='fa')
     ).add_to(mapa)
 
-    # Rota direta (geodésica curva)
-    grupo_direta = folium.FeatureGroup(name=f"Rota direta ({round(dist_direta)} km)")
+    # Rota direta (geodésica curva) — destacada em verde quando é a rota
+    # sugerida; em cinza (menos destaque) quando uma alternativa é recomendada.
+    direta_e_sugerida = not sugerir_alternativa
+    grupo_direta = folium.FeatureGroup(
+        name=f"Rota direta ({round(dist_direta)} km)" + (" ⭐ sugerida" if direta_e_sugerida else "")
+    )
     folium.PolyLine(
         pontos_geodesicos(lat_o, lon_o, lat_d, lon_d),
-        color="blue", weight=4, opacity=0.9,
-        tooltip=f"{origem} ➡️ {destino} — {round(dist_direta)} km (direto)"
+        color="green" if direta_e_sugerida else "gray",
+        weight=6 if direta_e_sugerida else 3,
+        opacity=0.9,
+        tooltip=(
+            f"{origem} ➡️ {destino} — {round(dist_direta)} km (direto)"
+            + (" — ⭐ ROTA SUGERIDA" if direta_e_sugerida else "")
+        )
     ).add_to(grupo_direta)
     grupo_direta.add_to(mapa)
 
     # Aeroportos no corredor + rotas alternativas via cada um
     grupo_aeroportos = folium.FeatureGroup(name=f"Aeroportos no caminho ({len(intermediarios)})")
     grupo_alternativas = folium.FeatureGroup(name="Rotas alternativas (com escala)", show=False)
+    grupo_sugerida = folium.FeatureGroup(name="⭐ Rota sugerida (via escala)", show=sugerir_alternativa)
     cores = ["purple", "orange", "darkgreen", "cadetblue", "darkred", "darkpurple"]
 
     for i, apt in enumerate(intermediarios):
         lat_a, lon_a = apt["lat"], apt["lon"]
-        cor = cores[i % len(cores)]
+        eh_sugerida = sugerir_alternativa and apt is melhor_alternativa
+        cor = "green" if eh_sugerida else cores[i % len(cores)]
 
         local = ", ".join(p for p in (apt.get("cidade"), apt.get("pais")) if p)
         folium.Marker(
@@ -142,8 +186,9 @@ def mostrar_mapa_sugerido_animado_html():
                 f"Escala: {origem} → {apt['iata']} → {destino}<br>"
                 f"Desvio: +{apt['desvio_rota_km']} km<br>"
                 f"Distância da rota direta: {apt['distancia_da_rota_km']} km"
+                + ("<br><b>⭐ ROTA SUGERIDA</b>" if eh_sugerida else "")
             ),
-            icon=folium.Icon(color=cor, icon='plane-departure', prefix='fa')
+            icon=folium.Icon(color=cor, icon='star' if eh_sugerida else 'plane-departure', prefix='fa')
         ).add_to(grupo_aeroportos)
 
         # Rota alternativa origem -> hub -> destino
@@ -151,13 +196,24 @@ def mostrar_mapa_sugerido_animado_html():
             pontos_geodesicos(lat_o, lon_o, lat_a, lon_a, n=48)
             + pontos_geodesicos(lat_a, lon_a, lat_d, lon_d, n=48)
         )
-        folium.PolyLine(
-            pontos_alt, color=cor, weight=2, opacity=0.6, dash_array="6, 10",
-            tooltip=f"Via {apt['iata']}: +{apt['desvio_rota_km']} km"
-        ).add_to(grupo_alternativas)
+        tooltip_alt = f"Via {apt['iata']}: +{apt['desvio_rota_km']} km"
+
+        if eh_sugerida:
+            # Linha em destaque, num grupo sempre visível por padrão —
+            # não depende de ligar a camada "Rotas alternativas".
+            folium.PolyLine(
+                pontos_alt, color="green", weight=5, opacity=0.9,
+                tooltip=f"{tooltip_alt} — ⭐ ROTA SUGERIDA"
+            ).add_to(grupo_sugerida)
+        else:
+            folium.PolyLine(
+                pontos_alt, color=cor, weight=2, opacity=0.6, dash_array="6, 10",
+                tooltip=tooltip_alt
+            ).add_to(grupo_alternativas)
 
     grupo_aeroportos.add_to(mapa)
     grupo_alternativas.add_to(mapa)
+    grupo_sugerida.add_to(mapa)
 
     # Rotas filed da AeroAPI (informação complementar, na origem)
     routes_list = rotas.get("routes", []) if isinstance(rotas, dict) else []

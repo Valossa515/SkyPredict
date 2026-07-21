@@ -1,42 +1,65 @@
-from datetime import date
+import logging
+from datetime import date, datetime
+
+import pandas as pd
+from meteostat import Daily, Point
 
 from services.http_client import session
-import pandas as pd
-from config import API_URL, HEADERS, BASE_FEATURES, HISTORICAL_START_DATE
-from requests import HTTPError
+from config import BASE_FEATURES, HISTORICAL_START_DATE, OPEN_METEO_URL
 
 FEATURES = BASE_FEATURES
 
-def carregar_dados(lat, lon):
+logger = logging.getLogger(__name__)
+
+
+def _linhas_via_pacote_meteostat(lat, lon):
+    inicio = datetime.strptime(HISTORICAL_START_DATE, "%Y-%m-%d")
+    fim = datetime.combine(date.today(), datetime.min.time())
+
+    df = Daily(Point(lat, lon), inicio, fim).fetch()
+    if df.empty:
+        raise ValueError("Pacote meteostat não retornou dados para as coordenadas informadas.")
+
+    return df.reset_index().rename(columns={"time": "date"})
+
+
+def _linhas_via_open_meteo(lat, lon):
     params = {
-        "lat": lat,
-        "lon": lon,
-        "start": HISTORICAL_START_DATE,
-        # Data final dinâmica: hoje (dados históricos disponíveis até o presente).
-        "end": date.today().isoformat(),
-        "units": "metric",
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": HISTORICAL_START_DATE,
+        "end_date": date.today().isoformat(),
+        "daily": "temperature_2m_mean,temperature_2m_min,temperature_2m_max,precipitation_sum,wind_speed_10m_max,surface_pressure_mean",
+        "timezone": "UTC",
     }
+    response = session.get(OPEN_METEO_URL, params=params, timeout=30)
+    response.raise_for_status()
 
-    response = session.get(API_URL, headers=HEADERS, params=params, timeout=15)
+    payload = response.json()
+    diario = payload.get("daily") or {}
+    if not diario.get("time"):
+        raise ValueError("A API Open-Meteo retornou dados vazios para os parâmetros informados.")
+
+    return pd.DataFrame({
+        "date": diario["time"],
+        "tavg": diario.get("temperature_2m_mean"),
+        "tmin": diario.get("temperature_2m_min"),
+        "tmax": diario.get("temperature_2m_max"),
+        "prcp": diario.get("precipitation_sum"),
+        "wspd": diario.get("wind_speed_10m_max"),
+        "pres": diario.get("surface_pressure_mean"),
+    })
+
+
+def carregar_dados(lat, lon):
     try:
-        response.raise_for_status()
-    except HTTPError as exc:
-        body_summary = response.text.strip().replace("\n", " ")[:200] or "<sem corpo>"
-        raise ValueError(f"Erro na API Meteostat (status {response.status_code}): {body_summary}") from exc
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ValueError("Erro ao interpretar resposta JSON da API Meteostat.") from exc
-
-    data = payload.get("data")
-    if not data:
-        raise ValueError("A API Meteostat retornou 'data' vazio para os parâmetros informados.")
-
-    df = pd.DataFrame(data)
+        df = _linhas_via_pacote_meteostat(lat, lon)
+    except Exception as exc:
+        logger.warning("Falha ao obter dados via pacote meteostat (%s); usando fallback Open-Meteo.", exc)
+        df = _linhas_via_open_meteo(lat, lon)
 
     if "date" not in df.columns:
-        raise ValueError(f"Resposta Meteostat sem campo 'date'. Colunas: {list(df.columns)}")
+        raise ValueError(f"Resposta sem campo 'date'. Colunas: {list(df.columns)}")
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"]).set_index("date").sort_index()
@@ -62,7 +85,7 @@ def carregar_dados(lat, lon):
     # mantenha só o essencial pra risco/treino
     df = df.dropna(subset=["tavg", "tmin", "tmax", "prcp"])
     if df.empty:
-        raise ValueError("Meteostat retornou dados, mas após limpeza o DataFrame ficou vazio.")
+        raise ValueError("Dados meteorológicos retornados, mas após limpeza o DataFrame ficou vazio.")
 
     # ---------- RISCO DAILY ----------
     # prcp aqui é mm/dia, wspd geralmente km/h

@@ -4,13 +4,10 @@ from dotenv import load_dotenv
 # Carregar variáveis de ambiente
 load_dotenv()
 
-# Configurações da API Meteostat
-API_URL = "https://meteostat.p.rapidapi.com/point/daily"
 MONGO_URI = os.getenv("MONGO_URI")
-HEADERS = {
-    "X-RapidAPI-Key": os.getenv("METEOSTAT_API_KEY"),
-    "X-RapidAPI-Host": os.getenv("METEOSTAT_API_HOST")
-}
+
+# Fallback de dados meteorológicos (usado se o pacote meteostat falhar).
+OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 # Configurações da API AeroAPI
 AERO_API_URL = "https://aeroapi.flightaware.com/aeroapi"

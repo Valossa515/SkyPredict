@@ -7,7 +7,7 @@ import io
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import (accuracy_score, classification_report, confusion_matrix,
                             f1_score, precision_score, recall_score, roc_auc_score)
-from services.meteostat_service import carregar_dados
+from services.weather_service import carregar_dados
 from services.model_service import (BASE_FEATURES, ENHANCED_FEATURES, _prepare_training_frame,
                                     build_ensemble_pipeline)
 from services.validators import validar_coordenadas

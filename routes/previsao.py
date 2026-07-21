@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import numpy as np
 
-from services.meteostat_service import carregar_dados
+from services.weather_service import carregar_dados
 from services.model_service import treinar_modelo, prever_variavel, prever_com_modelo, BASE_FEATURES
 from services.validators import validar_coordenadas, validar_data
 

@@ -4,7 +4,7 @@
 Esta API fornece previsões meteorológicas detalhadas, análise de risco para voos e sugestões de rotas aéreas baseadas em condições climáticas.  
 
 Ela utiliza:
-- 🔹 **Meteostat API** para dados históricos e previsão meteorológica.
+- 🔹 **Meteostat API** (opcional) e **Open-Meteo** (gratuita, sem chave) para dados históricos, com **fallback automático** entre elas.
 - 🔹 **AeroAPI** para informações sobre aeroportos e rotas de voo.
 - 🔹 **Machine Learning** com RandomForest para previsão de risco climático.
 - 🔹 **Flask** para estruturação dos endpoints.
@@ -62,6 +62,20 @@ MONGO_COLLECTION=colecao
 ```
 > ℹ️ As variáveis usadas pela aplicação são `MONGOD_DB` e `MONGO_COLLECTION`.
 > Variáveis opcionais (`FLASK_DEBUG`, `PORT`, `LOG_LEVEL`, etc.) estão listadas em `.env.example`.
+
+### 🌦️ Fonte de dados meteorológicos (com fallback)
+O clima pode vir do **Meteostat** (requer chave via RapidAPI) ou da **Open-Meteo**
+(gratuita, **sem chave**). O comportamento é controlado por `WEATHER_PROVIDER`:
+
+| Valor | Comportamento |
+|---|---|
+| `auto` (padrão) | Usa Meteostat se `METEOSTAT_API_KEY` existir e cai para Open-Meteo se falhar. Sem a chave, usa Open-Meteo direto. |
+| `meteostat` | Usa apenas o Meteostat. |
+| `openmeteo` | Usa apenas a Open-Meteo (não precisa de nenhuma chave). |
+
+> 💡 Ou seja: dá para rodar toda a parte meteorológica (`/previsao`, `/graficos`,
+> `/analise`, `/exportar_excel`) **sem nenhuma chave**, deixando `WEATHER_PROVIDER=openmeteo`
+> (ou `auto` sem a chave do Meteostat).
 
 ---
 

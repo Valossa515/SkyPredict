@@ -1,7 +1,7 @@
 from flask import Blueprint, request, send_file
 import pandas as pd
 import io
-from services.meteostat_service import carregar_dados
+from services.weather_service import carregar_dados
 from services.validators import validar_coordenadas
 
 exportar_bp = Blueprint('exportar', __name__)

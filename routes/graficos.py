@@ -2,7 +2,7 @@ from flask import Blueprint, request, send_file
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
-from services.meteostat_service import carregar_dados
+from services.weather_service import carregar_dados
 from services.model_service import prever_variavel
 from services.validators import validar_coordenadas, validar_data
 from config import HISTORICAL_LABEL, FUTURE_DATE_LABEL, PREDICTION_LABEL, TEMPERATURE_UNIT, BASE_FEATURES
